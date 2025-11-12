@@ -108,10 +108,7 @@ def download_file(sock, filename, save_dir="downloads"):
         # Send download command
         send_message(sock, "/download")
         
-        # Wait for server prompt
-        response = sock.recv(BUFFER_SIZE).decode('utf-8', 'ignore')
-        
-        # Send filename
+        # Send filename immediately (no prompt from server)
         sock.sendall(filename.encode())
         
         # Receive response

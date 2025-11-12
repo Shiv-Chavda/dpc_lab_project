@@ -21,7 +21,7 @@ class ChatClientGUI:
         self.sock = None
         self.running = False
         self.username = ""
-        self.pause_receive = False  # Flag to pause receive thread during file operations
+        self.receive_lock = threading.Lock()  # Lock for coordinating file operations
         
         self.create_connection_frame()
         
@@ -161,23 +161,31 @@ class ChatClientGUI:
     
     def receive_messages(self):
         """Continuously receive messages from server"""
-        import time
         while self.running:
             try:
-                # Pause receiving if file operation is in progress
-                if self.pause_receive:
+                # Try to acquire lock with timeout - if file operation is in progress, skip
+                if self.receive_lock.acquire(blocking=False):
+                    try:
+                        self.sock.settimeout(1.0)  # Use timeout to allow clean shutdown
+                        data = self.sock.recv(BUFFER_SIZE)
+                        
+                        if not data:
+                            self.running = False
+                            self.display_message("\n[DISCONNECTED] Connection lost.\n", 'red')
+                            break
+                        
+                        message = data.decode('utf-8', 'ignore')
+                        self.display_message(message)
+                    finally:
+                        self.receive_lock.release()
+                else:
+                    # Lock is held by file operation, wait a bit
+                    import time
                     time.sleep(0.1)
-                    continue
                 
-                data = self.sock.recv(BUFFER_SIZE)
-                if not data:
-                    self.running = False
-                    self.display_message("\n[DISCONNECTED] Connection lost.\n", 'red')
-                    break
-                
-                message = data.decode('utf-8', 'ignore')
-                self.display_message(message)
-                
+            except socket.timeout:
+                # Timeout is normal, just continue
+                continue
             except Exception as e:
                 if self.running:
                     self.display_message(f"\n[ERROR] {e}\n", 'red')
@@ -289,127 +297,188 @@ class ChatClientGUI:
         if not filepath:
             return
         
+        # Run upload in a separate thread to avoid blocking GUI
+        upload_thread = threading.Thread(target=self._upload_file_thread, args=(filepath,), daemon=True)
+        upload_thread.start()
+    
+    def _upload_file_thread(self, filepath):
+        """Thread function to handle file upload"""
+        import time
         try:
             filename = os.path.basename(filepath)
             filesize = os.path.getsize(filepath)
             
-            # Pause the receive thread temporarily for file upload
-            self.pause_receive = True
-            
-            # Send upload command
-            self.sock.sendall(b"/upload")
-            
-            # Wait for server ready message
-            import time
-            time.sleep(0.1)
-            ready_msg = self.sock.recv(BUFFER_SIZE)
-            
-            # Check if server is ready
-            if b"Ready to receive" not in ready_msg:
-                self.display_message(f"[ERROR] Unexpected response: {ready_msg.decode()}\n", 'red')
-                self.pause_receive = False
-                return
-            
-            # Send file metadata
-            metadata = f"{filename}|{filesize}"
-            self.sock.sendall(metadata.encode())
-            
-            # Wait for acknowledgment
-            ack = self.sock.recv(BUFFER_SIZE)
-            if ack != b"READY":
-                self.display_message("[ERROR] Server not ready for transfer\n", 'red')
-                self.pause_receive = False
-                return
-            
-            # Send file data
-            self.display_message(f"[UPLOAD] Uploading {filename} ({filesize} bytes)...\n", 'blue')
-            
-            with open(filepath, 'rb') as f:
+            # Use lock to serialize socket access
+            with self.receive_lock:
+                # Temporarily set socket to blocking mode with longer timeout
+                self.sock.settimeout(30.0)
+                
+                # Send upload command
+                self.sock.sendall(b"/upload")
+                
+                # Wait for server ready message
+                ready_msg = self.sock.recv(BUFFER_SIZE)
+                
+                # Check if server is ready
+                if b"Ready to receive" not in ready_msg:
+                    self.display_message(f"[ERROR] Unexpected response: {ready_msg.decode()}\n", 'red')
+                    self.sock.settimeout(1.0)
+                    return
+                
+                # Send file metadata
+                metadata = f"{filename}|{filesize}"
+                self.sock.sendall(metadata.encode())
+                
+                # Wait for acknowledgment
+                ack = self.sock.recv(BUFFER_SIZE)
+                if ack != b"READY":
+                    self.display_message("[ERROR] Server not ready for transfer\n", 'red')
+                    self.sock.settimeout(1.0)
+                    return
+                
+                # Send file data
+                self.display_message(f"[UPLOAD] Uploading {filename} ({filesize} bytes)...\n", 'blue')
+                
                 sent = 0
-                while sent < filesize:
-                    chunk = f.read(BUFFER_SIZE)
-                    if not chunk:
-                        break
-                    self.sock.sendall(chunk)
-                    sent += len(chunk)
+                with open(filepath, 'rb') as f:
+                    while sent < filesize:
+                        chunk = f.read(BUFFER_SIZE)
+                        if not chunk:
+                            break
+                        self.sock.sendall(chunk)
+                        sent += len(chunk)
+                
+                # Wait for confirmation
+                try:
+                    confirmation = self.sock.recv(BUFFER_SIZE).decode('utf-8', 'ignore')
+                    self.display_message(confirmation)
+                except socket.timeout:
+                    self.display_message("[INFO] Upload sent, waiting for server confirmation...\n", 'blue')
+                
+                # Restore timeout for receive loop
+                self.sock.settimeout(1.0)
             
-            # Resume receive thread
-            self.pause_receive = False
-            
-            self.display_message(f"[UPLOAD] Upload complete! Waiting for confirmation...\n", 'green')
-            
+        except socket.timeout as e:
+            self.display_message(f"\n[ERROR] Upload failed: Connection timeout. Server may be busy.\n", 'red')
+            try:
+                self.sock.settimeout(1.0)
+            except:
+                pass
         except Exception as e:
             self.display_message(f"\n[ERROR] Upload failed: {e}\n", 'red')
-            self.pause_receive = False
+            try:
+                self.sock.settimeout(1.0)
+            except:
+                pass
     
     def download_file(self, filename):
         """Download a file from server"""
+        # Run download in a separate thread to avoid blocking GUI
+        download_thread = threading.Thread(target=self._download_file_thread, args=(filename,), daemon=True)
+        download_thread.start()
+    
+    def _download_file_thread(self, filename):
+        """Thread function to handle file download"""
+        import time
         save_dir = "downloads"
         
         try:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             
-            # Pause the receive thread for file download
-            self.pause_receive = True
+            self.display_message(f"[DOWNLOAD] Requesting {filename}...\n", 'blue')
             
-            # Send download command
-            self.sock.sendall(b"/download")
-            
-            # Wait for prompt
-            import time
-            time.sleep(0.1)
-            prompt = self.sock.recv(BUFFER_SIZE)
-            
-            # Send filename
-            self.sock.sendall(filename.encode())
-            
-            # Receive response
-            response = self.sock.recv(BUFFER_SIZE).decode('utf-8', 'ignore')
-            
-            if response.startswith("ERROR"):
-                self.display_message(f"[ERROR] {response.split('|')[1]}\n", 'red')
-                self.pause_receive = False
-                return
-            
-            # Parse file size
-            parts = response.split('|')
-            if parts[0] != "OK":
-                self.display_message("[ERROR] Invalid server response\n", 'red')
-                self.pause_receive = False
-                return
-            
-            filesize = int(parts[1])
-            
-            # Send ready acknowledgment
-            self.sock.sendall(b"READY")
-            
-            # Receive file data
-            filepath = os.path.join(save_dir, filename)
-            received = 0
-            
-            self.display_message(f"[DOWNLOAD] Downloading {filename} ({filesize} bytes)...\n", 'blue')
-            
-            with open(filepath, 'wb') as f:
-                while received < filesize:
-                    chunk = self.sock.recv(min(BUFFER_SIZE, filesize - received))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    received += len(chunk)
-            
-            # Resume receive thread
-            self.pause_receive = False
-            
-            if received == filesize:
-                self.display_message(f"[SUCCESS] File saved to {filepath}\n", 'green')
-                messagebox.showinfo("Success", f"File downloaded to {filepath}")
-            else:
-                self.display_message("[ERROR] Download incomplete\n", 'red')
+            # Use lock to serialize socket access - keep locked for entire operation
+            with self.receive_lock:
+                # Temporarily set socket to blocking mode with longer timeout
+                self.sock.settimeout(30.0)
                 
+                # Send download command
+                self.sock.sendall(b"/download")
+                
+                # Small delay to ensure server processes command first
+                time.sleep(0.1)
+                
+                # Send filename
+                self.sock.sendall(filename.encode())
+                
+                # Receive response
+                response = self.sock.recv(BUFFER_SIZE).decode('utf-8', 'ignore')
+                
+                if response.startswith("ERROR"):
+                    self.display_message(f"[ERROR] {response.split('|')[1]}\n", 'red')
+                    self.sock.settimeout(1.0)
+                    return
+                
+                # Parse file size
+                parts = response.split('|')
+                if parts[0] != "OK":
+                    self.display_message(f"[ERROR] Invalid server response: {response}\n", 'red')
+                    self.sock.settimeout(1.0)
+                    return
+                
+                filesize = int(parts[1])
+                
+                # Send ready acknowledgment
+                self.sock.sendall(b"READY")
+                
+                # Receive file data
+                filepath = os.path.join(save_dir, filename)
+                received = 0
+                
+                self.display_message(f"[DOWNLOAD] Downloading {filename} ({filesize} bytes)...\n", 'blue')
+                
+                # Set socket to blocking mode (no timeout) for large file transfers
+                self.sock.settimeout(None)
+                
+                try:
+                    with open(filepath, 'wb') as f:
+                        while received < filesize:
+                            remaining = filesize - received
+                            chunk_size = min(BUFFER_SIZE, remaining)
+                            chunk = self.sock.recv(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            received += len(chunk)
+                    
+                    # DEBUG: Log after file write completes
+                    print(f"DEBUG: File write complete. Received: {received}, Filesize: {filesize}")
+                    
+                except Exception as e:
+                    self.display_message(f"[ERROR] File write error: {e}\n", 'red')
+                    self.sock.settimeout(1.0)
+                    return
+                finally:
+                    # Always restore timeout after file transfer
+                    self.sock.settimeout(1.0)
+                
+                # DEBUG: Log before checking completion
+                print(f"DEBUG: Checking completion. received={received}, filesize={filesize}, equal={received == filesize}")
+                
+                # Check download completion
+                if received == filesize:
+                    print(f"DEBUG: About to display success message")
+                    self.display_message(f"[SUCCESS] Downloaded {filename} to {filepath}\n", 'green')
+                    print(f"DEBUG: Success message displayed, showing messagebox")
+                    # Schedule messagebox on main thread
+                    self.root.after(0, lambda f=filepath: messagebox.showinfo("Success", f"File downloaded to:\n{f}"))
+                else:
+                    print(f"DEBUG: Download incomplete")
+                    self.display_message(f"[ERROR] Download incomplete ({received}/{filesize} bytes)\n", 'red')
+                    
+        except socket.timeout as e:
+            self.display_message(f"\n[ERROR] Download failed: Connection timeout. Server may be busy.\n", 'red')
+            try:
+                self.sock.settimeout(1.0)
+            except:
+                pass
         except Exception as e:
             self.display_message(f"\n[ERROR] Download failed: {e}\n", 'red')
-            self.pause_receive = False
+            try:
+                self.sock.settimeout(1.0)
+            except:
+                pass
 
 
 def main():

@@ -237,7 +237,7 @@ Type your message to chat with everyone!
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 msg = f"[{timestamp}] {name}: {text}\n".encode()
                 print(f"[CHAT] {name}: {text}")
-                broadcast(msg, exclude=conn)
+                broadcast(msg)  # Broadcast to all clients including sender
                 
     except Exception as e:
         print(f"[ERROR] {addr}: {e}")

@@ -43,56 +43,89 @@ class ChatClientGUI:
         
     def create_connection_frame(self):
         """Create connection setup UI"""
-        self.conn_frame = tk.Frame(self.root, padx=32, pady=32, bg=self.bg_main)
+        self.conn_frame = tk.Frame(self.root, bg=self.bg_main)
         self.conn_frame.pack(expand=True, fill="both")
 
-        card = tk.Frame(self.conn_frame, bg=self.bg_panel, bd=0, relief="flat")
-        card.pack(expand=True, ipadx=24, ipady=24)
+        # Full-width hero card
+        card = tk.Frame(
+            self.conn_frame,
+            bg=self.bg_panel,
+            bd=0,
+            relief="flat",
+            padx=32,
+            pady=32,
+        )
+        card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9)
 
-        # Title
+        # Header section
+        header = tk.Frame(card, bg=self.bg_panel)
+        header.pack(fill="x")
+
         title = tk.Label(
-            card,
+            header,
             text="Distributed Chat Client",
-            font=("Segoe UI", 20, "bold"),
+            font=("Segoe UI", 22, "bold"),
             bg=self.bg_panel,
             fg=self.fg_primary,
         )
-        title.pack(pady=(12, 4))
+        title.pack(anchor="w")
 
         subtitle = tk.Label(
-            card,
-            text="Connect, chat and share files with the lab server",
+            header,
+            text="Connect to the lab server to start chatting and sharing files.",
             font=("Segoe UI", 10),
             bg=self.bg_panel,
             fg=self.fg_muted,
         )
-        subtitle.pack(pady=(0, 18))
+        subtitle.pack(anchor="w", pady=(4, 18))
 
-        # Connection inputs
-        input_frame = tk.Frame(card, bg=self.bg_panel)
-        input_frame.pack(pady=10)
+        # Content split: inputs on the left, info on the right
+        content = tk.Frame(card, bg=self.bg_panel)
+        content.pack(fill="x")
 
-        label_kwargs = {"font": ("Segoe UI", 10), "bg": self.bg_panel, "fg": self.fg_muted}
-        entry_kwargs = {"width": 24, "font": ("Segoe UI", 10), "bg": self.bg_accent_soft, "fg": self.fg_primary,
-                        "insertbackground": self.fg_primary, "borderwidth": 0, "relief": "flat"}
+        form = tk.Frame(content, bg=self.bg_panel)
+        form.pack(side="left", fill="x", expand=True)
 
-        tk.Label(input_frame, text="Server Host", **label_kwargs).grid(row=0, column=0, sticky="w", padx=5, pady=6)
-        self.host_entry = tk.Entry(input_frame, **entry_kwargs)
+        label_kwargs = {"font": ("Segoe UI", 10, "bold"), "bg": self.bg_panel, "fg": self.fg_primary}
+        hint_kwargs = {"font": ("Segoe UI", 8), "bg": self.bg_panel, "fg": self.fg_muted}
+        entry_kwargs = {
+            "font": ("Segoe UI", 10),
+            "bg": self.bg_accent_soft,
+            "fg": self.fg_primary,
+            "insertbackground": self.fg_primary,
+            "borderwidth": 0,
+            "relief": "flat",
+        }
+
+        # Host
+        host_block = tk.Frame(form, bg=self.bg_panel)
+        host_block.pack(fill="x", pady=(0, 10))
+        tk.Label(host_block, text="Server Host", **label_kwargs).pack(anchor="w")
+        tk.Label(host_block, text="Usually 127.0.0.1 when running the server locally.", **hint_kwargs).pack(anchor="w")
+        self.host_entry = tk.Entry(host_block, **entry_kwargs)
         self.host_entry.insert(0, "127.0.0.1")
-        self.host_entry.grid(row=0, column=1, padx=5, pady=6)
+        self.host_entry.pack(fill="x", pady=(4, 0), ipady=6)
 
-        tk.Label(input_frame, text="Port", **label_kwargs).grid(row=1, column=0, sticky="w", padx=5, pady=6)
-        self.port_entry = tk.Entry(input_frame, **entry_kwargs)
+        # Port
+        port_block = tk.Frame(form, bg=self.bg_panel)
+        port_block.pack(fill="x", pady=(0, 10))
+        tk.Label(port_block, text="Port", **label_kwargs).pack(anchor="w")
+        tk.Label(port_block, text="Use the same port the server is listening on.", **hint_kwargs).pack(anchor="w")
+        self.port_entry = tk.Entry(port_block, **entry_kwargs)
         self.port_entry.insert(0, "5000")
-        self.port_entry.grid(row=1, column=1, padx=5, pady=6)
+        self.port_entry.pack(fill="x", pady=(4, 0), ipady=6)
 
-        tk.Label(input_frame, text="Your Name", **label_kwargs).grid(row=2, column=0, sticky="w", padx=5, pady=6)
-        self.name_entry = tk.Entry(input_frame, **entry_kwargs)
-        self.name_entry.grid(row=2, column=1, padx=5, pady=6)
+        # Name
+        name_block = tk.Frame(form, bg=self.bg_panel)
+        name_block.pack(fill="x", pady=(0, 10))
+        tk.Label(name_block, text="Display Name", **label_kwargs).pack(anchor="w")
+        tk.Label(name_block, text="This name will appear in the chat for other users.", **hint_kwargs).pack(anchor="w")
+        self.name_entry = tk.Entry(name_block, **entry_kwargs)
+        self.name_entry.pack(fill="x", pady=(4, 0), ipady=6)
 
         # Connect button
         self.connect_btn = tk.Button(
-            card,
+            form,
             text="Connect to Server",
             command=self.connect_to_server,
             font=("Segoe UI", 11, "bold"),
@@ -100,23 +133,48 @@ class ChatClientGUI:
             fg="white",
             activebackground="#2563eb",
             activeforeground="white",
-            padx=26,
+            padx=28,
             pady=10,
             borderwidth=0,
             relief="flat",
             cursor="hand2",
         )
-        self.connect_btn.pack(pady=(18, 8))
+        self.connect_btn.pack(anchor="w", pady=(8, 4))
 
         # Status label
         self.status_label = tk.Label(
-            card,
+            form,
             text="",
             font=("Segoe UI", 9),
             bg=self.bg_panel,
             fg=self.fg_muted,
         )
-        self.status_label.pack(pady=(4, 0))
+        self.status_label.pack(anchor="w", pady=(2, 0))
+
+        # Right side info / illustration
+        info = tk.Frame(content, bg=self.bg_panel)
+        info.pack(side="right", padx=(24, 0))
+
+        tk.Label(
+            info,
+            text="What you can do",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.bg_panel,
+            fg=self.fg_primary,
+        ).pack(anchor="w", pady=(0, 4))
+
+        bullets = [
+            "Real-time group chat with everyone connected.",
+            "Upload files so others can download them.",
+            "See who is online with /users.",
+            "List shared files with /files.",
+        ]
+
+        for b in bullets:
+            row = tk.Frame(info, bg=self.bg_panel)
+            row.pack(anchor="w")
+            tk.Label(row, text="•", font=("Segoe UI", 10), bg=self.bg_panel, fg=self.fg_muted).pack(side="left", padx=(0, 4))
+            tk.Label(row, text=b, font=("Segoe UI", 9), bg=self.bg_panel, fg=self.fg_muted).pack(side="left")
         
     def create_chat_frame(self):
         """Create main chat UI"""

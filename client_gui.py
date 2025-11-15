@@ -16,97 +16,273 @@ class ChatClientGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Distributed Chat Client")
-        self.root.geometry("800x600")
-        
+        self.root.geometry("960x620")
+        self.root.minsize(820, 540)
+
+        # Base colors / theme
+        self.bg_main = "#0f172a"  # slate-900
+        self.bg_panel = "#020617"  # slate-950
+        self.bg_accent = "#1d4ed8"  # blue-700
+        self.bg_accent_soft = "#1e293b"  # slate-800
+        self.fg_primary = "#e5e7eb"  # gray-200
+        self.fg_muted = "#9ca3af"  # gray-400
+        self.success_color = "#22c55e"  # green-500
+        self.error_color = "#ef4444"  # red-500
+        self.file_color = "#38bdf8"  # sky-400
+        self.join_color = "#22c55e"  # green-500
+        self.leave_color = "#f97316"  # orange-400
+
+        self.root.configure(bg=self.bg_main)
+
         self.sock = None
         self.running = False
         self.username = ""
         self.receive_lock = threading.Lock()  # Lock for coordinating file operations
-        
+
         self.create_connection_frame()
         
     def create_connection_frame(self):
         """Create connection setup UI"""
-        self.conn_frame = tk.Frame(self.root, padx=20, pady=20)
-        self.conn_frame.pack(expand=True, fill='both')
-        
+        self.conn_frame = tk.Frame(self.root, padx=32, pady=32, bg=self.bg_main)
+        self.conn_frame.pack(expand=True, fill="both")
+
+        card = tk.Frame(self.conn_frame, bg=self.bg_panel, bd=0, relief="flat")
+        card.pack(expand=True, ipadx=24, ipady=24)
+
         # Title
-        title = tk.Label(self.conn_frame, text="Distributed Chat Client", 
-                        font=('Arial', 18, 'bold'))
-        title.pack(pady=10)
-        
+        title = tk.Label(
+            card,
+            text="Distributed Chat Client",
+            font=("Segoe UI", 20, "bold"),
+            bg=self.bg_panel,
+            fg=self.fg_primary,
+        )
+        title.pack(pady=(12, 4))
+
+        subtitle = tk.Label(
+            card,
+            text="Connect, chat and share files with the lab server",
+            font=("Segoe UI", 10),
+            bg=self.bg_panel,
+            fg=self.fg_muted,
+        )
+        subtitle.pack(pady=(0, 18))
+
         # Connection inputs
-        input_frame = tk.Frame(self.conn_frame)
-        input_frame.pack(pady=20)
-        
-        tk.Label(input_frame, text="Server Host:", font=('Arial', 10)).grid(row=0, column=0, sticky='e', padx=5, pady=5)
-        self.host_entry = tk.Entry(input_frame, width=20)
+        input_frame = tk.Frame(card, bg=self.bg_panel)
+        input_frame.pack(pady=10)
+
+        label_kwargs = {"font": ("Segoe UI", 10), "bg": self.bg_panel, "fg": self.fg_muted}
+        entry_kwargs = {"width": 24, "font": ("Segoe UI", 10), "bg": self.bg_accent_soft, "fg": self.fg_primary,
+                        "insertbackground": self.fg_primary, "borderwidth": 0, "relief": "flat"}
+
+        tk.Label(input_frame, text="Server Host", **label_kwargs).grid(row=0, column=0, sticky="w", padx=5, pady=6)
+        self.host_entry = tk.Entry(input_frame, **entry_kwargs)
         self.host_entry.insert(0, "127.0.0.1")
-        self.host_entry.grid(row=0, column=1, padx=5, pady=5)
-        
-        tk.Label(input_frame, text="Port:", font=('Arial', 10)).grid(row=1, column=0, sticky='e', padx=5, pady=5)
-        self.port_entry = tk.Entry(input_frame, width=20)
+        self.host_entry.grid(row=0, column=1, padx=5, pady=6)
+
+        tk.Label(input_frame, text="Port", **label_kwargs).grid(row=1, column=0, sticky="w", padx=5, pady=6)
+        self.port_entry = tk.Entry(input_frame, **entry_kwargs)
         self.port_entry.insert(0, "5000")
-        self.port_entry.grid(row=1, column=1, padx=5, pady=5)
-        
-        tk.Label(input_frame, text="Your Name:", font=('Arial', 10)).grid(row=2, column=0, sticky='e', padx=5, pady=5)
-        self.name_entry = tk.Entry(input_frame, width=20)
-        self.name_entry.grid(row=2, column=1, padx=5, pady=5)
-        
+        self.port_entry.grid(row=1, column=1, padx=5, pady=6)
+
+        tk.Label(input_frame, text="Your Name", **label_kwargs).grid(row=2, column=0, sticky="w", padx=5, pady=6)
+        self.name_entry = tk.Entry(input_frame, **entry_kwargs)
+        self.name_entry.grid(row=2, column=1, padx=5, pady=6)
+
         # Connect button
-        self.connect_btn = tk.Button(self.conn_frame, text="Connect", 
-                                     command=self.connect_to_server,
-                                     font=('Arial', 12, 'bold'),
-                                     bg='#4CAF50', fg='white',
-                                     padx=20, pady=10)
-        self.connect_btn.pack(pady=20)
-        
+        self.connect_btn = tk.Button(
+            card,
+            text="Connect to Server",
+            command=self.connect_to_server,
+            font=("Segoe UI", 11, "bold"),
+            bg=self.bg_accent,
+            fg="white",
+            activebackground="#2563eb",
+            activeforeground="white",
+            padx=26,
+            pady=10,
+            borderwidth=0,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.connect_btn.pack(pady=(18, 8))
+
         # Status label
-        self.status_label = tk.Label(self.conn_frame, text="", font=('Arial', 10))
-        self.status_label.pack()
+        self.status_label = tk.Label(
+            card,
+            text="",
+            font=("Segoe UI", 9),
+            bg=self.bg_panel,
+            fg=self.fg_muted,
+        )
+        self.status_label.pack(pady=(4, 0))
         
     def create_chat_frame(self):
         """Create main chat UI"""
-        self.chat_frame = tk.Frame(self.root)
-        self.chat_frame.pack(expand=True, fill='both', padx=10, pady=10)
-        
-        # Top bar with username and buttons
-        top_frame = tk.Frame(self.chat_frame, bg='#2196F3', padx=10, pady=5)
-        top_frame.pack(fill='x')
-        
-        tk.Label(top_frame, text=f"User: {self.username}", 
-                font=('Arial', 12, 'bold'), bg='#2196F3', fg='white').pack(side='left')
-        
-        tk.Button(top_frame, text="Files", command=self.show_files,
-                 bg='#fff', padx=10).pack(side='right', padx=2)
-        tk.Button(top_frame, text="Users", command=self.show_users,
-                 bg='#fff', padx=10).pack(side='right', padx=2)
-        tk.Button(top_frame, text="Upload", command=self.upload_file,
-                 bg='#fff', padx=10).pack(side='right', padx=2)
-        
-        # Chat display area
-        self.chat_area = scrolledtext.ScrolledText(self.chat_frame, 
-                                                   wrap=tk.WORD,
-                                                   state='disabled',
-                                                   font=('Courier', 10),
-                                                   bg='#f5f5f5')
-        self.chat_area.pack(expand=True, fill='both', pady=5)
-        
+        self.chat_frame = tk.Frame(self.root, bg=self.bg_main)
+        self.chat_frame.pack(expand=True, fill="both", padx=16, pady=16)
+
+        # Main layout: left = chat, right = side panel
+        main_pane = tk.Frame(self.chat_frame, bg=self.bg_main)
+        main_pane.pack(expand=True, fill="both")
+
+        # Top bar with username and controls
+        top_frame = tk.Frame(main_pane, bg=self.bg_panel, padx=14, pady=8)
+        top_frame.pack(fill="x", side="top")
+
+        tk.Label(
+            top_frame,
+            text=f"{self.username}",
+            font=("Segoe UI", 11, "bold"),
+            bg=self.bg_panel,
+            fg=self.fg_primary,
+        ).pack(side="left")
+
+        tk.Label(
+            top_frame,
+            text="Connected to chat server",
+            font=("Segoe UI", 9),
+            bg=self.bg_panel,
+            fg=self.fg_muted,
+        ).pack(side="left", padx=(8, 0))
+
+        def make_top_button(text, command):
+            return tk.Button(
+                top_frame,
+                text=text,
+                command=command,
+                font=("Segoe UI", 9, "bold"),
+                bg=self.bg_accent_soft,
+                fg=self.fg_primary,
+                activebackground="#1f2937",
+                activeforeground=self.fg_primary,
+                padx=14,
+                pady=5,
+                borderwidth=0,
+                relief="flat",
+                cursor="hand2",
+            )
+
+        make_top_button("Upload", self.upload_file).pack(side="right", padx=(4, 0))
+        make_top_button("Files", self.show_files).pack(side="right", padx=(4, 0))
+        make_top_button("Users", self.show_users).pack(side="right", padx=(4, 0))
+
+        # Content area
+        content_frame = tk.Frame(main_pane, bg=self.bg_main)
+        content_frame.pack(expand=True, fill="both", pady=(8, 0))
+
+        # Left: chat area
+        chat_container = tk.Frame(content_frame, bg=self.bg_main)
+        chat_container.pack(side="left", expand=True, fill="both")
+
+        self.chat_area = scrolledtext.ScrolledText(
+            chat_container,
+            wrap=tk.WORD,
+            state="disabled",
+            font=("Consolas", 10),
+            bg=self.bg_accent_soft,
+            fg=self.fg_primary,
+            insertbackground=self.fg_primary,
+            borderwidth=0,
+            relief="flat",
+        )
+        self.chat_area.pack(expand=True, fill="both")
+
+        # Right: quick help / legend
+        side_panel = tk.Frame(
+            content_frame,
+            bg=self.bg_panel,
+            width=220,
+            padx=10,
+            pady=10,
+        )
+        side_panel.pack(side="right", fill="y", padx=(8, 0))
+
+        tk.Label(
+            side_panel,
+            text="Commands",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.bg_panel,
+            fg=self.fg_primary,
+        ).pack(anchor="w", pady=(0, 4))
+
+        commands_text = (
+            "/users  - list online users\n"
+            "/files  - list shared files\n"
+            "/upload - upload a file\n"
+            "/download - download a file\n"
+            "/quit   - leave chat"
+        )
+
+        tk.Label(
+            side_panel,
+            text=commands_text,
+            font=("Segoe UI", 9),
+            justify="left",
+            bg=self.bg_panel,
+            fg=self.fg_muted,
+        ).pack(anchor="w")
+
+        tk.Label(
+            side_panel,
+            text="Legend",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.bg_panel,
+            fg=self.fg_primary,
+        ).pack(anchor="w", pady=(12, 4))
+
+        legend_items = [
+            ("System / errors", self.error_color),
+            ("Uploads / downloads", self.file_color),
+            ("Join / leave", self.join_color),
+        ]
+
+        for text, color in legend_items:
+            row = tk.Frame(side_panel, bg=self.bg_panel)
+            row.pack(anchor="w", pady=1)
+            tk.Label(row, width=2, bg=color).pack(side="left", padx=(0, 6))
+            tk.Label(
+                row,
+                text=text,
+                font=("Segoe UI", 9),
+                bg=self.bg_panel,
+                fg=self.fg_muted,
+            ).pack(side="left")
+
         # Message input area
-        input_frame = tk.Frame(self.chat_frame)
-        input_frame.pack(fill='x', pady=5)
-        
-        self.message_entry = tk.Entry(input_frame, font=('Arial', 11))
-        self.message_entry.pack(side='left', expand=True, fill='x', padx=(0, 5))
-        self.message_entry.bind('<Return>', lambda e: self.send_message())
-        
-        self.send_btn = tk.Button(input_frame, text="Send", 
-                                  command=self.send_message,
-                                  bg='#4CAF50', fg='white',
-                                  font=('Arial', 10, 'bold'),
-                                  padx=20)
-        self.send_btn.pack(side='right')
-        
+        input_frame = tk.Frame(self.chat_frame, bg=self.bg_main, pady=6)
+        input_frame.pack(fill="x")
+
+        self.message_entry = tk.Entry(
+            input_frame,
+            font=("Segoe UI", 10),
+            bg=self.bg_accent_soft,
+            fg=self.fg_primary,
+            insertbackground=self.fg_primary,
+            borderwidth=0,
+            relief="flat",
+        )
+        self.message_entry.pack(side="left", expand=True, fill="x", padx=(0, 6), ipady=6)
+        self.message_entry.bind("<Return>", lambda e: self.send_message())
+
+        self.send_btn = tk.Button(
+            input_frame,
+            text="Send",
+            command=self.send_message,
+            bg=self.bg_accent,
+            fg="white",
+            activebackground="#2563eb",
+            activeforeground="white",
+            font=("Segoe UI", 10, "bold"),
+            padx=24,
+            pady=6,
+            borderwidth=0,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.send_btn.pack(side="right")
+
         self.message_entry.focus()
         
     def connect_to_server(self):
@@ -218,11 +394,11 @@ class ChatClientGUI:
         self.chat_area.see(tk.END)
         
         # Configure tags
-        self.chat_area.tag_config('error', foreground='red')
-        self.chat_area.tag_config('success', foreground='green')
-        self.chat_area.tag_config('file', foreground='blue')
-        self.chat_area.tag_config('join', foreground='green', font=('Courier', 10, 'bold'))
-        self.chat_area.tag_config('leave', foreground='orange', font=('Courier', 10, 'bold'))
+        self.chat_area.tag_config('error', foreground=self.error_color)
+        self.chat_area.tag_config('success', foreground=self.success_color)
+        self.chat_area.tag_config('file', foreground=self.file_color)
+        self.chat_area.tag_config('join', foreground=self.join_color, font=('Consolas', 10, 'bold'))
+        self.chat_area.tag_config('leave', foreground=self.leave_color, font=('Consolas', 10, 'bold'))
     
     def send_message(self):
         """Send message to server"""
